@@ -7,8 +7,14 @@ Sources (priority order):
   3. AGY phone                     http://192.168.3.25:8080
 
 Automatically falls back to next endpoint on 503 (no upstream configured).
+OpenDesign agent: antigravity | bin: agy | streamFormat: plain
 """
-import json, os, socket, sys, urllib.error, urllib.request
+import json
+import os
+import socket
+import sys
+import urllib.error
+import urllib.request
 
 VERSION = "1.1.0"
 LOCAL_TOKEN = os.environ.get("LOCAL_PROXY_TOKEN", "freecc")
@@ -44,6 +50,7 @@ DISPLAY_TO_ID = {
     "GPT-OSS 120B (Medium)":        "standard-proxy",
 }
 
+
 def is_reachable(base: str, timeout: float = 2.0) -> bool:
     try:
         from urllib.parse import urlparse
@@ -53,29 +60,33 @@ def is_reachable(base: str, timeout: float = 2.0) -> bool:
     except OSError:
         return False
 
+
 def candidate_endpoints(model_id: str):
     """Yield (model_id, endpoint) pairs in priority order."""
     for ep in ENDPOINTS:
         if model_id in ep["models"] and is_reachable(ep["base"]):
             yield model_id, ep
-    # fallback: any reachable endpoint with its first model
     for ep in ENDPOINTS:
         if is_reachable(ep["base"]):
             yield ep["models"][0], ep
 
+
 def stream_chat(ep: dict, model: str, prompt: str) -> bool:
-    """Stream chat response. Returns True on success, False on 503 (retry)."""
+    """Stream response. Returns True on success, False on 503/unreachable (retry)."""
     payload = json.dumps({
-        "model": model, "stream": True,
+        "model":    model,
+        "stream":   True,
         "messages": [{"role": "user", "content": prompt}],
     }).encode()
     req = urllib.request.Request(
-        f"{ep[base]}/v1/chat/completions", data=payload,
+        ep["base"] + "/v1/chat/completions",
+        data=payload,
         headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {ep[token]}",
-            "x-api-key": ep["token"],
-        }, method="POST",
+            "Content-Type":  "application/json",
+            "Authorization": "Bearer " + ep["token"],
+            "x-api-key":     ep["token"],
+        },
+        method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
@@ -97,23 +108,25 @@ def stream_chat(ep: dict, model: str, prompt: str) -> bool:
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")[:300]
         if e.code == 503:
-            sys.stderr.write(f"[agy] {ep[name]} 503 (no upstream) — trying next\n")
-            return False  # signal retry
-        sys.stderr.write(f"agy: HTTP {e.code} ({ep[name]}): {body}\n")
+            sys.stderr.write("[agy] " + ep["name"] + " 503 (no upstream) — trying next\n")
+            return False
+        sys.stderr.write("agy: HTTP " + str(e.code) + " (" + ep["name"] + "): " + body + "\n")
         sys.exit(1)
     except urllib.error.URLError as e:
-        sys.stderr.write(f"[agy] {ep[name]} unreachable — trying next\n")
+        sys.stderr.write("[agy] " + ep["name"] + " unreachable — trying next\n")
         return False
+
 
 def main() -> None:
     args = sys.argv[1:]
     if "--version" in args or "-v" in args:
-        print(f"agy {VERSION} (local-proxy + AGY3 + AGY-phone, auto-fallback)")
+        print("agy " + VERSION + " (local-proxy + AGY3 + AGY-phone, auto-fallback)")
         return
     model_raw, i = "default", 0
     while i < len(args):
         if args[i] in ("--model", "-m") and i + 1 < len(args):
-            model_raw = args[i + 1]; i += 2
+            model_raw = args[i + 1]
+            i += 2
         else:
             i += 1
     prompt = sys.stdin.read().strip()
@@ -121,11 +134,12 @@ def main() -> None:
         sys.exit(0)
     model_id = DISPLAY_TO_ID.get(model_raw, model_raw)
     for mid, ep in candidate_endpoints(model_id):
-        sys.stderr.write(f"[agy] → {ep[name]} | model={mid}\n")
+        sys.stderr.write("[agy] -> " + ep["name"] + " | model=" + mid + "\n")
         if stream_chat(ep, mid, prompt):
             return
     sys.stderr.write("agy: all endpoints failed\n")
     sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
