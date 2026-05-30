@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""AGY — unified LLM wrapper for OpenDesign (streamFormat: plain).
+
+Sources (priority order):
+  1. local free-claude-code-proxy  http://172.17.0.1:18880  (slots)
+  2. AGY3 tablet                   http://192.168.3.162:8080
+  3. AGY phone                     http://192.168.3.25:8080
+
+Usage:
+  agy --version
+  agy [--model <id>] < prompt.txt
+
+OpenDesign agent id: antigravity | streamFormat: plain | bin: agy
+"""
+import json, os, socket, sys, urllib.error, urllib.request
+
+VERSION = "1.0.0"
+LOCAL_TOKEN = os.environ.get("LOCAL_PROXY_TOKEN", "freecc")
+AGY_TOKEN   = os.environ.get("AGY_API_KEY", "proxy-key")
+
+LOCAL_SLOTS = [
+    "standard-proxy", "coding-proxy", "agent-proxy", "reasoning-proxy",
+    "analytics-proxy", "multimedia-proxy", "fast-proxy", "cheap-proxy",
+    "docs-assistant-proxy",
+]
+AGY_MODELS = [
+    "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-thinking",
+    "gemini-2.5-flash-lite", "gemini-3-flash", "gemini-3-flash-agent",
+    "gemini-3.1-flash-lite", "gemini-3.1-flash-image",
+    "gemini-3.1-pro-high", "gemini-3.1-pro-low",
+    "gemini-3.5-flash-low", "gemini-3.5-flash-medium", "gemini-3.5-flash-extra-low",
+    "gemini-pro-agent", "claude-sonnet-4-6", "claude-opus-4-6-thinking",
+]
+ENDPOINTS = [
+    {"name": "local",     "base": "http://172.17.0.1:18880",  "token": LOCAL_TOKEN, "models": LOCAL_SLOTS},
+    {"name": "agy3",      "base": "http://192.168.3.162:8080","token": AGY_TOKEN,   "models": AGY_MODELS},
+    {"name": "agy-phone", "base": "http://192.168.3.25:8080", "token": AGY_TOKEN,   "models": AGY_MODELS},
+]
+DISPLAY_TO_ID = {
+    "default":                       "standard-proxy",
+    "Gemini 3.1 Pro (High)":        "gemini-3.1-pro-high",
+    "Gemini 3.1 Pro (Low)":         "gemini-3.1-pro-low",
+    "Gemini 3.5 Flash (High)":      "gemini-pro-agent",
+    "Gemini 3.5 Flash (Medium)":    "gemini-3.5-flash-medium",
+    "Gemini 3.5 Flash (Low)":       "gemini-3.5-flash-low",
+    "Claude Sonnet 4.6 (Thinking)": "claude-sonnet-4-6",
+    "Claude Opus 4.6 (Thinking)":   "claude-opus-4-6-thinking",
+    "GPT-OSS 120B (Medium)":        "standard-proxy",
+}
+
+def is_reachable(base: str, timeout: float = 2.0) -> bool:
+    try:
+        from urllib.parse import urlparse
+        p = urlparse(base)
+        with socket.create_connection((p.hostname, p.port or 80), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+def resolve_model(raw: str):
+    model_id = DISPLAY_TO_ID.get(raw, raw)
+    for ep in ENDPOINTS:
+        if model_id in ep["models"] and is_reachable(ep["base"]):
+            return model_id, ep
+    for ep in ENDPOINTS:
+        if is_reachable(ep["base"]):
+            return ep["models"][0], ep
+    return model_id, ENDPOINTS[0]
+
+def stream_chat(ep: dict, model: str, prompt: str) -> None:
+    payload = json.dumps({
+        "model":    model,
+        "stream":   True,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode()
+    req = urllib.request.Request(
+        f"{ep[base]}/v1/chat/completions",
+        data=payload,
+        headers={
+            "Content-Type":  "application/json",
+            "Authorization": f"Bearer {ep[token]}",
+            "x-api-key":     ep["token"],
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            for raw in resp:
+                line = raw.decode("utf-8", errors="replace").rstrip()
+                if not line.startswith("data: "):
+                    continue
+                chunk = line[6:]
+                if chunk == "[DONE]":
+                    break
+                try:
+                    text = (json.loads(chunk).get("choices") or [{}])[0].get("delta", {}).get("content", "")
+                    if text:
+                        sys.stdout.write(text)
+                        sys.stdout.flush()
+                except Exception:
+                    pass
+    except urllib.error.HTTPError as e:
+        sys.stderr.write(f"agy: HTTP {e.code} ({ep[name]}): {e.read().decode()[:200]}\n")
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        sys.stderr.write(f"agy: connection error ({ep[name]}): {e}\n")
+        sys.exit(1)
+
+def main() -> None:
+    args = sys.argv[1:]
+    if "--version" in args or "-v" in args:
+        print(f"agy {VERSION} (local-proxy + AGY3 + AGY-phone)")
+        return
+    model_raw, i = "default", 0
+    while i < len(args):
+        if args[i] in ("--model", "-m") and i + 1 < len(args):
+            model_raw = args[i + 1]
+            i += 2
+        else:
+            i += 1
+    prompt = sys.stdin.read().strip()
+    if not prompt:
+        sys.exit(0)
+    model_id, ep = resolve_model(model_raw)
+    sys.stderr.write(f"[agy] → {ep['name']} | model={model_id}\n")
+    stream_chat(ep, model_id, prompt)
+
+if __name__ == "__main__":
+    main()
