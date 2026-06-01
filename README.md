@@ -257,3 +257,62 @@ bash run.sh
 | `OD_API_TOKEN` | — | OpenDesign Bearer token (web UI auth) |
 | `OD_ALLOWED_ORIGINS` | — | Comma-separated дозволені браузерні origin |
 | `AGY_HTTP_PORT` | `18882` | Port для agy-server |
+
+---
+
+## OpenDesign: ai-drakon design workflow
+
+Plugin `ai-drakon-mobile` registered in OpenDesign with defaults.
+**Always pass `pluginId: "ai-drakon-mobile"`** — skips discovery form, generates directly.
+
+### REST API (direct, no MCP needed)
+
+```bash
+# 1. Start run
+curl -s -X POST \
+  -H "Authorization: Bearer 2269d21455f772f62878631c5665d7ff1e57fe58790d976e80871c427a3dee4a" \
+  -H "Content-Type: application/json" \
+  -H "Origin: http://192.168.3.184:7459" \
+  http://192.168.3.184:7459/api/runs \
+  -d '{"projectId":"ai-drakon","agentId":"antigravity","pluginId":"ai-drakon-mobile","message":"YOUR PROMPT"}'
+
+# 2. Poll until done (replace RUN_ID)
+until curl -s -H "Authorization: Bearer 2269d21455f772f62878631c5665d7ff1e57fe58790d976e80871c427a3dee4a" \
+  http://192.168.3.184:7459/api/runs/RUN_ID | grep -q '"succeeded"'; do sleep 5; done
+
+# 3. Read output (via SSH into Docker)
+ssh vokov@192.168.3.184 \
+  'docker exec open-design cat /app/.od/runs/RUN_ID/events.jsonl | python3 -c "
+import sys,json
+for l in sys.stdin:
+    try:
+        e=json.loads(l)
+        if e.get(\"event\")==\"stdout\": print(e[\"data\"].get(\"chunk\",\"\"),end=\"\")
+    except: pass
+"'
+```
+
+### Continue conversation (conversationId)
+
+First run returns `conversationId`. Pass it in follow-up runs for design iterations:
+```bash
+-d '{"projectId":"ai-drakon","conversationId":"CONV_ID","pluginId":"ai-drakon-mobile","message":"Refine..."}'
+```
+
+Current ai-drakon conversationId: `b045d5ce-20d3-46c4-9554-96d933800dba`
+
+### Generated components location
+
+```
+workspace/ai-drakon-scaffolder/src/components/mobile/MobileNavBar.tsx   # first generated
+```
+
+### Prompt template for ai-drakon components
+
+```
+Generate a [COMPONENT] for ai-drakon platform.
+React 18 TypeScript Tailwind CSS, dark theme (Vercel/Linear style).
+Lucide icons, react-router-dom v6, mobile-first md:hidden.
+Glassmorphism: bg-black/60 backdrop-blur-lg border-t border-white/10.
+Output: full .tsx file, TypeScript interfaces, usage example.
+```
