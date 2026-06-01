@@ -2,8 +2,8 @@
 """AGY — unified LLM wrapper for OpenDesign (streamFormat: plain).
 
 Sources (priority order):
-  1. AGY3 tablet                   http://192.168.3.162:8080
-  2. AGY phone                     http://192.168.3.25:8080
+  1. AGY3 tablet                   http://192.168.3.204:8080
+  2. AGY phone                     http://192.168.3.195:8080
   3. local free-claude-code-proxy  http://172.17.0.1:18880  (slots)
 
 Automatically falls back to next endpoint on 503 (no upstream configured).
@@ -34,8 +34,8 @@ AGY_MODELS = [
     "gemini-pro-agent", "claude-sonnet-4-6", "claude-opus-4-6-thinking",
 ]
 ENDPOINTS = [
-    {"name": "agy3",      "base": "http://192.168.3.162:8080","token": AGY_TOKEN,   "models": AGY_MODELS},
-    {"name": "agy-phone", "base": "http://192.168.3.25:8080", "token": AGY_TOKEN,   "models": AGY_MODELS},
+    {"name": "agy3",      "base": "http://192.168.3.204:8080","token": AGY_TOKEN,   "models": AGY_MODELS},
+    {"name": "agy-phone", "base": "http://192.168.3.195:8080", "token": AGY_TOKEN,   "models": AGY_MODELS},
     {"name": "local",     "base": "http://172.17.0.1:18880",  "token": LOCAL_TOKEN, "models": LOCAL_SLOTS},
 ]
 DISPLAY_TO_ID = {
