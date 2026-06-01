@@ -8,150 +8,130 @@ Python CLI wrapper that connects OpenDesign (`antigravity` agent) to multiple LL
 | 2 | AGY phone | `192.168.3.195:8080` | gemini-*, claude-* |
 | 3 | Local proxy | `172.17.0.1:18880` | standard-proxy, coding-proxy, ... |
 
-If a source returns 503 (quota exceeded) or is unreachable, the next one is tried automatically.
-
 ---
 
-## Quick Start — Run on dev server
+## Quick Start
 
 ```bash
 cd ~/open-design-custom
-bash run.sh
-```
-
-OpenDesign UI буде доступний на: **http://192.168.3.184:7459/**
-
----
-
-## Підключення через web UI (покрокова інструкція)
-
-### Крок 1 — Відкрити інтерфейс
-
-Відкрий у браузері: `http://192.168.3.184:7459/`
-
-### Крок 2 — Ввести API токен
-
-При першому відкритті або якщо питає авторизацію, введи токен:
-
-```
-2269d21455f772f62878631c5665d7ff1e57fe58790d976e80871c427a3dee4a
-```
-
-> Токен можна зберегти в браузері — він зберігається в localStorage.
-
-### Крок 3 — Вибрати агента
-
-У вікні вибору агента обери **Antigravity** (єдиний зі статусом ✓ Available).
-
-- Якщо агенти не відображаються — переконайся що токен введено правильно.
-- Antigravity = наш `agy` wrapper, вже встановлений всередині контейнера.
-
-### Крок 4 — Вибрати модель
-
-Після вибору Antigravity зʼявиться список моделей:
-
-| Модель в UI | Реальний маршрут |
-|-------------|-----------------|
-| `Default (CLI config)` | gemini-2.5-flash через AGY |
-| `Gemini 3.1 Pro (High)` | gemini-3.1-pro-high |
-| `Gemini 3.1 Pro (Low)` | gemini-3.1-pro-low |
-| `Gemini 3.5 Flash (High)` | gemini-pro-agent |
-| `Gemini 3.5 Flash (Medium)` | gemini-3.5-flash-medium |
-| `Gemini 3.5 Flash (Low)` | gemini-3.5-flash-low |
-| `Claude Sonnet 4.6 (Thinking)` | claude-sonnet-4-6 |
-| `Claude Opus 4.6 (Thinking)` | claude-opus-4-6-thinking |
-| `GPT-OSS 120B (Medium)` | standard-proxy (local) |
-
-**Рекомендація:** починай з `Default` або `Gemini 3.5 Flash (Medium)` — швидкі та стабільні.
-
-### Крок 5 — Почати чат
-
-Натисни **New Chat**, введи запит. Якщо AGY3 на квоті — `agy` автоматично переключиться на AGY phone або local proxy без помилки.
-
----
-
-## Якщо щось не працює
-
-### Пустий список агентів / "No agents available"
-→ Перевір токен (Крок 2). Токен чутливий до пробілів.
-
-### "Agent not available" або помилка при запиті
-→ Перевір статус контейнера:
-```bash
-sshpass -p '805235io.' ssh vokov@192.168.3.184 'docker ps | grep open-design'
-```
-→ Переглянь логи:
-```bash
-sshpass -p '805235io.' ssh vokov@192.168.3.184 'docker logs open-design --tail 30'
-```
-
-### Порожня відповідь або "empty response"
-→ Всі ендпоінти на квоті або недоступні. Перевір:
-```bash
-sshpass -p '805235io.' ssh vokov@192.168.3.184 'docker exec open-design python3 -c "
-import socket
-for name,host,port in [(\"agy3\",\"192.168.3.204\",8080),(\"agy-phone\",\"192.168.3.195\",8080),(\"local\",\"172.17.0.1\",18880)]:
-    try:
-        with socket.create_connection((host,port),timeout=2): print(f\"OK  {name}\")
-    except: print(f\"ERR {name}\")
-"'
-```
-
-### AGY phone/tablet змінили IP
-→ Оновити `agy` скрипт (рядки `ENDPOINTS`) і перезібрати:
-```bash
-# на dev сервері (192.168.3.184):
-cd ~/open-design-custom
-nano agy          # змінити IP
-cp agy ~/agy-wrapper/agy
 docker build -t open-design-custom:latest .
 bash run.sh
 ```
 
+Після старту доступно два URL:
+
+| URL | Особливість |
+|-----|------------|
+| `http://192.168.3.184:7459/` | Прямий доступ, потрібен Bearer токен або BYOK |
+| `http://192.168.3.184:7460/` | **NGINX proxy** — токен вбудовано, просто відкрий і користуйся |
+
 ---
 
-## CLI Usage
+## Підключення через :7460 (рекомендовано)
 
+NGINX на порту `:7460` автоматично вставляє Bearer токен в кожен запит.  
+Ніяких налаштувань у браузері — просто відкрий `http://192.168.3.184:7460/`.
+
+При першому відкритті:
+1. **Welcome** → Continue
+2. **Connect** → вибери **Local CLI** (агент `antigravity` вже доступний)
+3. **About you** → вибери роль → Continue
+4. **New Chat** → введи запит → Shift+Enter
+
+> Відповідь може зайняти 40-60 секунд — AGY обробляє через Gemini/Claude.
+
+---
+
+## Підключення через :7459 (BYOK)
+
+Якщо хочеш підключитись напряму через BYOK (Bring Your Own Key):
+
+### Варіант A — Local CLI з токеном
+
+Bearer токен: `2269d21455f772f62878631c5665d7ff1e57fe58790d976e80871c427a3dee4a`
+
+### Варіант B — Custom OpenAI provider (agy-server)
+
+У Settings → Providers → Add Custom:
+- **Provider:** OpenAI (Custom)
+- **API Key:** `freecc`
+- **Base URL:** `http://192.168.3.184:18882/v1`
+- **Model:** `default`
+
+agy-server — OpenAI-compatible HTTP wrapper навколо `agy` CLI, порт `:18882`.
+
+---
+
+## agy-server (OpenAI-compatible HTTP API)
+
+Файл: `server.py`
+
+Запускається автоматично з `run.sh` всередині контейнера:
+```sh
+docker exec -d open-design sh -c "python3 /usr/local/bin/agy-server 18882 2>/tmp/agy-server.log"
+```
+
+Ендпоінти:
+```
+GET  /v1/models               — список моделей
+POST /v1/chat/completions     — OpenAI-compatible chat
+GET  /health                  — статус
+```
+
+Тест:
 ```bash
-# Version check
-agy --version
-
-# Default model via stdin
-echo "Hello" | agy
-
-# Specific model
-echo "Write a function" | agy --model "Claude Sonnet 4.6 (Thinking)"
-
-# Or by internal ID
-echo "Hello" | agy --model gemini-3.1-pro-high
+curl http://192.168.3.184:18882/health
+curl http://192.168.3.184:18882/v1/models
+curl -X POST http://192.168.3.184:18882/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"default","messages":[{"role":"user","content":"hello"}]}'
 ```
 
 ---
 
-## OpenDesign Integration Details
+## NGINX proxy конфіг (/etc/nginx/http.d/opendesign.conf)
 
-OpenDesign agent config (embedded in `antigravity.js` inside container):
-- **id**: `antigravity`
-- **bin**: `agy`
-- **streamFormat**: `plain`
-- **promptViaStdin**: `true`
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ""      close;
+}
+
+server {
+    listen 7460;
+    server_name _;
+    location / {
+        proxy_pass http://127.0.0.1:7459;
+        proxy_http_version 1.1;
+        proxy_set_header Authorization "Bearer 2269d21455f772f62878631c5665d7ff1e57fe58790d976e80871c427a3dee4a";
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}
+```
+
+Перезапуск NGINX:
+```bash
+sudo nginx -s reload
+```
 
 ---
 
-## Docker Build & Deploy
+## run.sh (повна команда Docker)
 
-```bash
-# Build
-docker build -t open-design-custom:latest .
-
-# Run (full command)
+```sh
+#!/bin/sh
 docker stop open-design 2>/dev/null; docker rm open-design 2>/dev/null
 docker run -d \
   --name open-design \
   --restart unless-stopped \
-  -p 7459:7456 \
+  -p 7459:7456 -p 18882:18882 \
   -v open_design_data:/app/.od \
-  -e OD_ALLOWED_ORIGINS="http://192.168.3.184:7459,http://192.168.3.195:7459,http://192.168.3.162:7459,http://192.168.3.25:7459" \
+  -e OD_ALLOWED_ORIGINS="http://192.168.3.184:7459,http://192.168.3.195:7459,http://192.168.3.162:7459,http://192.168.3.25:7459,http://192.168.3.184:7460,http://192.168.3.195:7460,http://192.168.3.162:7460,http://192.168.3.25:7460" \
   -e LOCAL_PROXY_TOKEN=freecc \
   -e AGY_API_KEY=proxy-key \
   -e OD_BIND_HOST=0.0.0.0 \
@@ -159,15 +139,121 @@ docker run -d \
   -e OD_API_TOKEN=2269d21455f772f62878631c5665d7ff1e57fe58790d976e80871c427a3dee4a \
   open-design-custom:latest \
   node apps/daemon/dist/cli.js --no-open
+sleep 3
+docker exec -d open-design sh -c "python3 /usr/local/bin/agy-server 18882 2>/tmp/agy-server.log"
+```
+
+> **OD_ALLOWED_ORIGINS** повинен містити і `:7459` і `:7460` варіанти для кожного IP — інакше 403.
+
+---
+
+## Використання ai-drakon в OpenDesign
+
+Проект `ai-drakon` вже зареєстровано в OpenDesign (project_id: `ai-drakon`).
+
+### Через MCP (Claude → OpenDesign)
+
+Claude має MCP інструменти для прямого керування OpenDesign:
+
+```
+mcp__opendesign__run(
+  project_id="ai-drakon",
+  agent_id="antigravity",
+  prompt="Generate a mobile navigation component for ai-drakon with dark theme, Tailwind, Lucide icons"
+)
+```
+
+### Через браузер
+
+1. Відкрий `http://192.168.3.184:7460/`
+2. Вибери або створи проект **AI-Drakon Platform**
+3. Вибери агент **Antigravity**
+4. Вводь запити на генерацію компонентів
+
+### Стиль компонентів ai-drakon
+
+При запитах до OpenDesign для ai-drakon завжди вказуй:
+```
+Framework: React 18 + TypeScript + Tailwind CSS + Vite
+Icons: Lucide React  
+Router: react-router-dom v6
+Theme: dark, Modern minimal (Vercel/Linear style)
+Mobile-first: md:hidden responsive classes
+Glassmorphism overlays: bg-black/60 backdrop-blur-lg
+Output: single .tsx file, TypeScript interfaces, usage example
+```
+
+### Компоненти що потребують покращення
+
+```
+src/components/mobile/     — мобільна навігація
+src/components/pipeline/   — DRAKON pipeline UI
+src/components/workspace/  — workspace view
+src/pages/                 — всі сторінки (16 pages)
 ```
 
 ---
+
+## Модель в OpenDesign → реальний маршрут
+
+| Модель в UI | ID | Ендпоінт |
+|-------------|-----|---------|
+| `Default` | gemini-2.5-flash | AGY3 або AGY phone |
+| `Gemini 3.1 Pro (High)` | gemini-3.1-pro-high | AGY3 → AGY phone |
+| `Gemini 3.5 Flash (Medium)` | gemini-3.5-flash-medium | AGY3 → AGY phone |
+| `Claude Sonnet 4.6 (Thinking)` | claude-sonnet-4-6 | AGY3 → AGY phone |
+| `Claude Opus 4.6 (Thinking)` | claude-opus-4-6-thinking | AGY3 → AGY phone |
+| `GPT-OSS 120B (Medium)` | standard-proxy | local 172.17.0.1:18880 |
+
+---
+
+## CLI Usage
+
+```bash
+echo "Hello" | agy
+echo "Write a component" | agy --model "Claude Sonnet 4.6 (Thinking)"
+agy --version
+```
+
+---
+
+## Якщо щось не працює
+
+**403 в браузері** → IP браузера не в `OD_ALLOWED_ORIGINS`. Додай в `run.sh` і перезапусти.
+
+**Порожня відповідь** → Всі ендпоінти на квоті:
+```bash
+ssh vokov@192.168.3.184 'docker exec open-design python3 -c "
+import socket
+for n,h,p in [(\"agy3\",\"192.168.3.204\",8080),(\"phone\",\"192.168.3.195\",8080),(\"local\",\"172.17.0.1\",18880)]:
+    try: socket.create_connection((h,p),2); print(\"OK\",n)
+    except: print(\"ERR\",n)
+"'
+```
+
+**agy-server не відповідає** → Запусти вручну:
+```bash
+docker exec -d open-design sh -c "python3 /usr/local/bin/agy-server 18882"
+```
+
+**AGY IP змінився** → Оновити в `agy` скрипт (рядки `ENDPOINTS`) і `docker build + bash run.sh`.
+
+---
+
+## Docker Build
+
+```bash
+cd ~/open-design-custom
+docker build -t open-design-custom:latest .
+bash run.sh
+```
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LOCAL_PROXY_TOKEN` | `freecc` | Token for local free-claude-code-proxy |
-| `AGY_API_KEY` | `proxy-key` | Token for AGY3 / AGY phone proxy |
-| `OD_API_TOKEN` | — | OpenDesign web UI auth token |
-| `OD_ALLOWED_ORIGINS` | — | Comma-separated allowed browser origins |
+| `LOCAL_PROXY_TOKEN` | `freecc` | Token для local free-claude-code-proxy |
+| `AGY_API_KEY` | `proxy-key` | Token для AGY3 / AGY phone |
+| `OD_API_TOKEN` | — | OpenDesign Bearer token (web UI auth) |
+| `OD_ALLOWED_ORIGINS` | — | Comma-separated дозволені браузерні origin |
+| `AGY_HTTP_PORT` | `18882` | Port для agy-server |
